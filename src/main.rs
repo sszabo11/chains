@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     io, process,
 };
+mod embedding;
 
 use anyhow::Result;
 use rand::Rng;
@@ -13,53 +14,57 @@ fn main() {
     //let corpus = fs::read_to_string("./corpus/harry-potter-1").unwrap();
 
     let harry = read_harry_potters();
-    let yt = parse_yt();
-    let moby = read_txt_file("./corpus/moby.txt");
-    let seuss = parse_seuss();
-    let imdb = parse_imdb("./corpus/imdb.csv", 0).unwrap();
-    let jeopardy = parse_imdb("./corpus/jeopardy.csv", 7).unwrap();
+    let model = embedding::Model::new(&harry, 300);
 
-    let moby_lines: Vec<String> = moby
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    model.embed();
 
-    let mut all_texts: Vec<String> = Vec::new();
-    all_texts.extend(imdb);
-    all_texts.extend(jeopardy);
-    all_texts.extend(harry);
-    all_texts.extend(moby_lines);
-    all_texts.extend(seuss);
-    all_texts.extend(yt);
+    //let yt = parse_yt();
+    //let moby = read_txt_file("./corpus/moby.txt");
+    //let seuss = parse_seuss();
+    //let imdb = parse_imdb("./corpus/imdb.csv", 0).unwrap();
+    //let jeopardy = parse_imdb("./corpus/jeopardy.csv", 7).unwrap();
 
-    const DEGREE: usize = 2;
-    let mut chain = all_texts
-        .par_iter()
-        .map(|text| {
-            let mut local_chain = Chain::new(DEGREE);
-            local_chain.process(text);
-            local_chain
-        })
-        .reduce(
-            || Chain::new(DEGREE),
-            |mut a, b| {
-                a.merge(b);
-                a
-            },
-        );
+    //let moby_lines: Vec<String> = moby
+    //    .lines()
+    //    .map(|s| s.trim().to_string())
+    //    .filter(|s| !s.is_empty())
+    //    .collect();
 
-    chain.process(&moby);
-    //chain.process(&yt);
-    println!("Text len: {}", all_texts.len());
-    println!("Chain len: {}", chain.map.len());
+    //let mut all_texts: Vec<String> = Vec::new();
+    //all_texts.extend(imdb);
+    //all_texts.extend(jeopardy);
+    //all_texts.extend(harry);
+    //all_texts.extend(moby_lines);
+    //all_texts.extend(seuss);
+    //all_texts.extend(yt);
 
-    //println!("Values: {:?}", chain.map);
+    //const DEGREE: usize = 2;
+    //let mut chain = all_texts
+    //    .par_iter()
+    //    .map(|text| {
+    //        let mut local_chain = Chain::new(DEGREE);
+    //        local_chain.process(text);
+    //        local_chain
+    //    })
+    //    .reduce(
+    //        || Chain::new(DEGREE),
+    //        |mut a, b| {
+    //            a.merge(b);
+    //            a
+    //        },
+    //    );
 
-    //let text = chain.predict(200);
-    let question = String::from("What is the best movie?");
-    let text = chain.question(question, 100);
-    println!("\n \n{}", text);
+    //chain.process(&moby);
+    ////chain.process(&yt);
+    //println!("Text len: {}", all_texts.len());
+    //println!("Chain len: {}", chain.map.len());
+
+    ////println!("Values: {:?}", chain.map);
+
+    ////let text = chain.predict(200);
+    //let question = String::from("What is the best movie?");
+    //let text = chain.question(question, 100);
+    //println!("\n \n{}", text);
 }
 
 #[derive(Debug, Serialize, Deserialize)]
