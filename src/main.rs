@@ -10,13 +10,24 @@ use rand::Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::embedding::Model;
+
 fn main() {
     //let corpus = fs::read_to_string("./corpus/harry-potter-1").unwrap();
 
     let harry = read_harry_potters();
-    let model = embedding::Model::new(&harry, 300);
+    let seuss = parse_seuss();
 
-    model.embed();
+    println!("Corpus len: {}", harry.len());
+    //println!("Corpus words: {}", harry.join(" ").split_whitespace().collect::<Vec<&str>>().len());
+
+    let mut model = Model::new(&seuss, 300, 4, 10);
+    println!("{:?}", model.vocab);
+
+    model.train(10, 0.025, 0);
+
+    println!("Success!");
+    println!("{}", model.input_e.lock().unwrap())
 
     //let yt = parse_yt();
     //let moby = read_txt_file("./corpus/moby.txt");
