@@ -4,30 +4,51 @@ use std::{
     io, process,
 };
 mod embedding;
+mod visualize;
 
 use anyhow::Result;
 use rand::Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::embedding::Model;
+use crate::{embedding::Model, visualize::draw2};
 
 fn main() {
-    //let corpus = fs::read_to_string("./corpus/harry-potter-1").unwrap();
+    let corpus = fs::read_to_string("./corpus/seuss/the-cat-in-a-hat.txt").unwrap();
+    let harry1 = fs::read_to_string("./corpus/harry-potter-1").unwrap();
+    let moby = fs::read_to_string("./corpus/moby.txt").unwrap();
+    let moon_skulls = fs::read_to_string("./corpus/moon-of-skulls.txt").unwrap();
+    let macbeth = fs::read_to_string("./corpus/macbeth.txt").unwrap();
+    let code = fs::read_to_string("./corpus/code.txt").unwrap();
 
-    let harry = read_harry_potters();
-    let seuss = parse_seuss();
+    let harry = read_harry_potters().join(" ");
+    let seuss = parse_seuss().join(" ");
 
-    println!("Corpus len: {}", harry.len());
-    //println!("Corpus words: {}", harry.join(" ").split_whitespace().collect::<Vec<&str>>().len());
+    println!("Corpus len: {}", corpus.len());
+    println!(
+        "Corpus words: {}",
+        corpus.split_whitespace().collect::<Vec<&str>>().len()
+    );
 
-    let mut model = Model::new(&seuss, 300, 4, 10);
+    let mut model = Model::new(harry1, 300, 4, 10);
     println!("{:?}", model.vocab);
 
-    model.train(10, 0.025, 0);
+    model.train(4, 0.001);
 
+    let words: Vec<String> = model.vocab.keys().cloned().collect();
+
+    let data = model.input_e.lock().unwrap();
+    draw2(&words, data.clone(), 1, 10).unwrap();
     println!("Success!");
-    println!("{}", model.input_e.lock().unwrap())
+
+    let word = "trees";
+
+    //let idx = model.w_to_i.get(word).unwrap();
+    //let result = model.input_e.lock().unwrap();
+
+    //let vector = result.row(*idx);
+
+    //println!("{:?}", model.flatten_inputs());
 
     //let yt = parse_yt();
     //let moby = read_txt_file("./corpus/moby.txt");
