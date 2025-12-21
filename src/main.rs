@@ -20,6 +20,8 @@ fn main() {
     let moon_skulls = fs::read_to_string("./corpus/moon-of-skulls.txt").unwrap();
     let macbeth = fs::read_to_string("./corpus/macbeth.txt").unwrap();
     let code = fs::read_to_string("./corpus/code.txt").unwrap();
+    let chatbot = fs::read_to_string("./corpus/chatbot.txt").unwrap();
+    let dialog = fs::read_to_string("./corpus/dialog.txt").unwrap();
 
     let harry = read_harry_potters().join(" ");
     let seuss = parse_seuss().join(" ");
@@ -30,15 +32,32 @@ fn main() {
         corpus.split_whitespace().collect::<Vec<&str>>().len()
     );
 
-    let mut model = Model::new(harry1, 300, 4, 10);
+    //println!("ch: {:?}", chatbot);
+    let mut model = Model::new(dialog, 300, 4, 10);
     println!("{:?}", model.vocab);
 
-    model.train(4, 0.001);
+    //model.train(15, 0.0002);
 
+    model.sentence(15, 0.0002);
     let words: Vec<String> = model.vocab.keys().cloned().collect();
 
     let data = model.input_e.lock().unwrap();
+
     draw2(&words, data.clone(), 1, 10).unwrap();
+    drop(data);
+    //let sim1 = model.cosine_similarity("tree", "truffula");
+    //println!("Tree + Truffula: {:?}", sim1);
+    //let sim2 = model.cosine_similarity("grinch", "christmas");
+    //println!("Grinch + Christmas: {:?}", sim2);
+    //let sim3 = model.cosine_similarity("grinch", "green");
+    //println!("Grinch + Green: {:?}", sim3);
+    //let sim4 = model.cosine_similarity("fast", "quick");
+    //println!("Fast + Quick: {:?}", sim4);
+    //let sim5 = model.cosine_similarity("truffula", "brown");
+    //println!("Truffula + brown: {:?}", sim5);
+    //let sim6 = model.cosine_similarity("noise", "game");
+    //println!("Noise + game: {:?}", sim6);
+
     println!("Success!");
 
     let word = "trees";

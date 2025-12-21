@@ -3,17 +3,54 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use ndarray::{Array, Array1, ArrayBase, Dim, Ix2, OwnedRepr};
+use ndarray::{Array, Array1, ArrayBase, Dim, Ix2, OwnedRepr, ViewRepr};
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::Uniform;
 use rand::random_range;
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelBridge,
-    ParallelIterator,
+use rayon::{
+    iter::{
+        IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelBridge,
+        ParallelIterator,
+    },
+    str::ParallelString,
 };
 
 use crate::visualize::draw2;
 
+pub fn get_vocab_n(corpus: &str, word_len: usize) -> HashMap<String, usize> {
+    let mut v: HashMap<String, usize> = HashMap::new();
+
+    //for (i, line) in corpus.iter().enumerate() {
+    let words: Vec<&str> = corpus.split_whitespace().collect();
+
+    for i in (0..words.len()).step_by(word_len) {
+        let words: Vec<String> = (0..word_len)
+            .filter_map(|j| {
+                if (i + j) < words.len() {
+                    Some(tokenize_word(words[i + j]))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let word = words.join(" ");
+        //let word: String = word
+        //    .chars()
+        //    .filter(|c| !c.is_ascii_punctuation())
+        //    .map(|c| c.to_ascii_lowercase())
+        //    .collect();
+
+        if let Some(occurances) = v.get(&word) {
+            v.insert(word, *occurances + 1);
+        } else {
+            v.insert(word, 1);
+        }
+    }
+    //}
+
+    v
+}
 pub fn get_vocab(corpus: &str) -> HashMap<String, usize> {
     let mut v: HashMap<String, usize> = HashMap::new();
 
@@ -42,7 +79,7 @@ pub fn get_vocab(corpus: &str) -> HashMap<String, usize> {
 fn filter_infrequent_words(vocab: &HashMap<String, usize>) -> HashMap<String, usize> {
     let mut new_v = HashMap::new();
     for word in vocab.iter() {
-        if *word.1 > 10 {
+        if *word.1 > 0 {
             new_v.insert(word.0.to_string(), *word.1);
         }
     }
@@ -78,15 +115,32 @@ pub struct Model {
     k: usize,
 }
 
+fn get_sentences(corpus: &str) -> HashMap<String, usize> {
+    let mut map: HashMap<String, usize> = HashMap::new();
+
+    corpus.lines().for_each(|s| {
+        println!("s {:?}", s);
+        let (q, a) = s.split_once('\t').unwrap();
+        map.insert(tokenize_word(q), 1);
+        map.insert(tokenize_word(a), 1);
+        //(tokenize_word(q).trim_ascii_start().to_string(), 1)
+    });
+
+    println!("{}", map.len());
+    map
+}
 impl Model {
     pub fn new(corpus: String, dim: usize, sliding_window: usize, k: usize) -> Self {
-        let vocab = get_vocab(&corpus);
+        //let vocab = get_vocab_n(&corpus, 1);
+        let vocab = get_sentences(&corpus);
         let filtered_vocab = filter_infrequent_words(&vocab);
         let (w_to_i, i_to_w) = create_vocab_maps(&filtered_vocab);
 
         let vocab_size = vocab.len();
 
         println!("Vocab Words: {}", vocab_size);
+
+        //println!("vocab: {:?}", vocab);
         Self {
             input_e: Arc::new(Mutex::new(Array::random(
                 (vocab_size, dim),
@@ -135,6 +189,127 @@ impl Model {
         //}
     }
 
+    pub fn sentence(&mut self, epochs: usize, learning_rate: f32) {
+        let max_gradient_norm = 5.0;
+        let e: Vec<_> = (0..epochs).collect();
+
+        let output_e_clone = Arc::clone(&self.output_e);
+        let input_e_clone = Arc::clone(&self.input_e);
+        println!("c: {} {:?}", self.vocab.len(), self.vocab.keys());
+        let sentences: Vec<String> = self.vocab.keys().cloned().collect();
+
+        println!("sentec: {:?}", sentences.len());
+        e.iter().for_each(|epoch| {
+            println!("Epoch: {}", epoch);
+
+            let output_e = Arc::clone(&output_e_clone);
+            let input_e = Arc::clone(&input_e_clone);
+
+            let qa: Vec<&str> = self.corpus.lines().collect();
+
+            for i in 0..qa.len() {
+                //println!("{:?}", qa);
+                let (q, a) = qa[i].split_once('\t').unwrap();
+                if i.is_multiple_of(100) {
+                    println!(
+                        "Status from epoch {} at 100 sentences. {}/{}",
+                        epoch,
+                        i,
+                        sentences.len() - 1
+                    )
+                }
+
+                let target_sentence = tokenize_word(q);
+                let Some(target_idx) = self.w_to_i.get(&target_sentence) else {
+                    continue;
+                };
+
+                let context_word = tokenize_word(a);
+                let Some(context_idx) = self.w_to_i.get(&context_word) else {
+                    continue;
+                };
+
+                {
+                    let mut input_guard = input_e.lock().unwrap();
+                    let mut output_guard = output_e.lock().unwrap();
+
+                    // Similarity
+                    let pos_dot_score = input_guard
+                        .row(*target_idx)
+                        .dot(&output_guard.row(*context_idx));
+
+                    assert!(
+                        !pos_dot_score.is_nan(),
+                        "{} \n{}",
+                        input_guard.row(*target_idx),
+                        &output_guard.row(*context_idx)
+                    );
+                    // Clamps 0-1
+                    let pos_score = sigmoid(pos_dot_score);
+                    assert!(!pos_score.is_nan());
+
+                    // Error (want to be lower)
+                    let pos_error = pos_score - 1.0;
+                    assert!(!pos_error.is_nan());
+
+                    let mut target_update = Array1::<f32>::zeros(input_guard.ncols());
+
+                    let norm = target_update.mapv(|v| v * v).sum().sqrt();
+                    if norm > max_gradient_norm {
+                        target_update *= max_gradient_norm / norm;
+                    }
+                    // Positive update to target
+                    // Learning rate * positive error * output vec of context word
+                    target_update += &(learning_rate * pos_error * &output_guard.row(*context_idx));
+
+                    // We do k negative samples at random
+                    for _ in 0..self.k {
+                        let neg_context_idx = random_range(0..self.i_to_w.len());
+                        assert!(neg_context_idx < self.i_to_w.len());
+
+                        let neg_dot_score = input_guard
+                            .row(*target_idx)
+                            .dot(&output_guard.row(neg_context_idx));
+                        assert!(
+                            !neg_dot_score.is_nan(),
+                            "{} \n{}",
+                            input_guard.row(*target_idx),
+                            &output_guard.row(neg_context_idx)
+                        );
+
+                        let neg_score = sigmoid(neg_dot_score);
+                        assert!(!neg_score.is_nan());
+                        let neg_error = neg_score;
+
+                        // How much to nudge
+                        let update_factor = learning_rate * neg_error;
+
+                        assert!(!update_factor.is_nan());
+
+                        target_update += &(update_factor * &output_guard.row(neg_context_idx));
+
+                        let mut o_n = output_guard.row_mut(neg_context_idx);
+
+                        // Update negative output vector (push away)
+                        o_n += &(update_factor * &input_guard.row(*target_idx));
+                    }
+
+                    // Apply all accumalted updates to target input vector
+                    let mut mut_target_input = input_guard.row_mut(*target_idx);
+                    mut_target_input += &target_update;
+
+                    // Updates positive output vector (pull towards target)
+                    let pos_update_factor = learning_rate * pos_error;
+
+                    let mut mut_context_output = output_guard.row_mut(*context_idx);
+                    mut_context_output += &(pos_update_factor * &input_guard.row(*target_idx));
+                }
+                //}
+            }
+            //}
+        });
+    }
+
     pub fn train(&mut self, epochs: usize, learning_rate: f32) {
         let max_gradient_norm = 5.0;
         let e: Vec<_> = (0..epochs).collect();
@@ -144,11 +319,12 @@ impl Model {
         let words: Vec<String> = self.vocab.keys().cloned().collect();
 
         e.iter().for_each(|epoch| {
-            if epoch.is_multiple_of(5) {
-                let data = self.input_e.lock().unwrap();
-                draw2(&words, data.clone(), 1, 10).unwrap();
-                drop(data);
-            }
+            //if epoch.is_multiple_of(5) && *epoch != 0 {
+            //    println!("Drawing");
+            //    let data = self.input_e.lock().unwrap();
+            //    draw2(&words, data.clone(), 1, 10).unwrap();
+            //    drop(data);
+            //}
 
             println!("Epoch: {}", epoch);
 
@@ -265,16 +441,32 @@ impl Model {
         });
     }
 
-    fn dot_product(&self, target_idx: usize, context_idx: usize) -> f32 {
-        let input_e_clone = self.input_e.clone();
-        let output_e_clone = self.output_e.clone();
+    pub fn cosine_similarity(&self, word1: &str, word2: &str) -> Option<f32> {
+        let input_e = self.input_e.lock().unwrap();
 
-        let input_e = input_e_clone.lock().unwrap();
-        let output_e = output_e_clone.lock().unwrap();
+        let word1_idx = self.w_to_i.get(word1).unwrap();
+        let word2_idx = self.w_to_i.get(word2).unwrap();
 
-        input_e.row(target_idx).dot(&output_e.row(context_idx))
+        let word1_vec = input_e.row(*word1_idx);
+        let word2_vec = input_e.row(*word2_idx);
+
+        let dot: f32 = word1_vec.dot(&word2_vec);
+        let mag1 = word1_vec.mapv(|x| x * x).sum().sqrt();
+        let mag2 = word2_vec.mapv(|x| x * x).sum().sqrt();
+
+        if mag1 == 0.0 || mag2 == 0.0 {
+            return Some(0.0); // or None if you prefer
+        }
+        println!("dot: {} | mag1: {} | mag2: {}", dot, mag1, mag2);
+        Some(dot / (mag1 * mag2))
     }
 }
+fn magnitude(input: &[f32]) -> f32 {
+    let s: f32 = input.iter().map(|v| v.powf(2.0)).sum();
+
+    s.sqrt()
+}
+
 fn tokenize_word(word: &str) -> String {
     let word: String = word
         .chars()

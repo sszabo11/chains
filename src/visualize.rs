@@ -8,7 +8,7 @@ pub fn draw_graph(input: Vec<f32>, dim: u8, epochs: usize) {
     let flattened = flatten(input, dim, epochs);
 }
 
-const PERPLEXITY: f32 = 10.0;
+const PERPLEXITY: f32 = 20.0;
 const THETA: f32 = 0.5;
 
 fn flatten(input: Vec<f32>, dim: u8, epochs: usize) -> Vec<f32> {
@@ -98,7 +98,7 @@ pub fn draw2(
     );
     //let _ = fs::File::create_new(&path).unwrap();
 
-    let root = BitMapBackend::new("./graph/6.png", (1200, 1200)).into_drawing_area();
+    let root = BitMapBackend::new("./graph/7.png", (1200, 1200)).into_drawing_area();
     root.fill(&WHITE)?;
 
     // Perform t-SNE reduction
@@ -107,7 +107,8 @@ pub fn draw2(
     let points: Vec<f32> = tSNE::new(&samples)
         .embedding_dim(2)
         .perplexity(PERPLEXITY)
-        .epochs(1000)
+        .learning_rate(200.0)
+        .epochs(2000)
         .barnes_hut(THETA, |a, b| {
             a.iter()
                 .zip(b.iter())
