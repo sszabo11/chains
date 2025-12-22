@@ -84,8 +84,7 @@ fn flatten(input: Vec<f32>, dim: u8, epochs: usize) -> Vec<f32> {
 pub fn draw2(
     words: &[String],
     data: ArrayBase<OwnedRepr<f32>, Dim<[usize; 2]>>,
-    dim: u8,
-    epochs: usize,
+    img_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let time = std::time::SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -98,7 +97,8 @@ pub fn draw2(
     );
     //let _ = fs::File::create_new(&path).unwrap();
 
-    let root = BitMapBackend::new("./graph/7.png", (1200, 1200)).into_drawing_area();
+    let img = format!("./graph/{}", img_path);
+    let root = BitMapBackend::new(&img, (1200, 1200)).into_drawing_area();
     root.fill(&WHITE)?;
 
     // Perform t-SNE reduction

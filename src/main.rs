@@ -7,6 +7,7 @@ mod embedding;
 mod visualize;
 
 use anyhow::Result;
+use ndarray::{Array2, Axis};
 use rand::Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -33,26 +34,57 @@ fn main() {
     );
 
     //println!("ch: {:?}", chatbot);
-    let mut model = Model::new(dialog, 300, 4, 10);
+    let mut model = Model::new(harry1, 700, 6, 15);
     println!("{:?}", model.vocab);
 
-    //model.train(15, 0.0002);
+    model.train(6, 0.0002);
 
-    model.sentence(15, 0.0002);
+    //let (w_to_i, i_to_w, matrix) = model.load_embeddings_txt("./graph/chatbot.txt").unwrap();
+    //model.w_to_i = w_to_i;
+    //model.set_input(matrix);
+
+    model.save_embeddings_txt("./graph/harry.txt").unwrap();
+
+    println!("Training complete!");
+
+    let sentences_map = model.sentences2();
+
+    println!("Computed sentences!");
+
+    println!();
+    println!();
+    println!();
+
+    //model.sentence(15, 0.0002);
     let words: Vec<String> = model.vocab.keys().cloned().collect();
 
-    let data = model.input_e.lock().unwrap();
+    //let data = model.input_e.lock().unwrap();
 
-    draw2(&words, data.clone(), 1, 10).unwrap();
-    drop(data);
-    //let sim1 = model.cosine_similarity("tree", "truffula");
-    //println!("Tree + Truffula: {:?}", sim1);
-    //let sim2 = model.cosine_similarity("grinch", "christmas");
-    //println!("Grinch + Christmas: {:?}", sim2);
-    //let sim3 = model.cosine_similarity("grinch", "green");
-    //println!("Grinch + Green: {:?}", sim3);
-    //let sim4 = model.cosine_similarity("fast", "quick");
-    //println!("Fast + Quick: {:?}", sim4);
+    //draw2(&words, data.clone(), "9.png").unwrap();
+
+    model.question_answer_loop(&sentences_map);
+    let q = model.encode_question("Whats the weather?");
+    println!("Encoded question!");
+
+    let a = model.find_answer(&sentences_map, q);
+    println!("Found answer!");
+
+    println!("Answer: {}", a);
+
+    let mut sentence_e = Array2::<f32>::zeros((2000, model.dim));
+    sentences_map
+        .values()
+        .for_each(|v| sentence_e.push(Axis(0), v.view()).unwrap());
+
+    let list: Vec<String> = sentences_map.keys().cloned().collect();
+
+    //draw2(&list, sentence_e, "8.png").unwrap();
+    //drop(data);
+
+    //let sim1 = model.cosine_similarity("did you call the manager?", "yes");
+    //let sim2 = model.cosine_similarity("what did the doctor say?", "nothing");
+    //let sim3 = model.cosine_similarity("what's the matter?", "I was on a plane");
+    //let sim4 = model.cosine_similarity("rain", "cold");
     //let sim5 = model.cosine_similarity("truffula", "brown");
     //println!("Truffula + brown: {:?}", sim5);
     //let sim6 = model.cosine_similarity("noise", "game");

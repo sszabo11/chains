@@ -1,9 +1,13 @@
 use std::{
     collections::HashMap,
+    fs::File,
+    io::{self, BufRead, BufReader, BufWriter, Read, Write},
+    path::Path,
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use ndarray::{Array, Array1, ArrayBase, Dim, Ix2, OwnedRepr, ViewRepr};
+use colored::Colorize;
+use ndarray::{Array, Array1, Array2, ArrayBase, Axis, Dim, Ix1, Ix2, OwnedRepr, ViewRepr};
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::Uniform;
 use rand::random_range;
@@ -14,6 +18,7 @@ use rayon::{
     },
     str::ParallelString,
 };
+use regex::Regex;
 
 use crate::visualize::draw2;
 
@@ -79,7 +84,7 @@ pub fn get_vocab(corpus: &str) -> HashMap<String, usize> {
 fn filter_infrequent_words(vocab: &HashMap<String, usize>) -> HashMap<String, usize> {
     let mut new_v = HashMap::new();
     for word in vocab.iter() {
-        if *word.1 > 0 {
+        if *word.1 > 10 {
             new_v.insert(word.0.to_string(), *word.1);
         }
     }
@@ -131,8 +136,8 @@ fn get_sentences(corpus: &str) -> HashMap<String, usize> {
 }
 impl Model {
     pub fn new(corpus: String, dim: usize, sliding_window: usize, k: usize) -> Self {
-        //let vocab = get_vocab_n(&corpus, 1);
-        let vocab = get_sentences(&corpus);
+        let vocab = get_vocab_n(&corpus, 1);
+        //let vocab = get_sentences(&corpus);
         let filtered_vocab = filter_infrequent_words(&vocab);
         let (w_to_i, i_to_w) = create_vocab_maps(&filtered_vocab);
 
@@ -158,6 +163,113 @@ impl Model {
             sliding_window,
             i_to_w,
         }
+    }
+
+    pub fn sentences2(&self) -> HashMap<String, Array<f32, Ix1>> {
+        let words: Vec<String> = self.vocab.keys().cloned().collect();
+
+        let mut map = HashMap::new();
+        println!("words: {:?}", words.len());
+
+        let input_vector = self.input_e.lock().unwrap();
+
+        let re = Regex::new(r"[.?!]\s+|$").unwrap();
+
+        for line in self.corpus.lines() {
+            println!("line: {}", line);
+            for s in re.split(line) {
+                println!("{:?}", s);
+                //sentences_list.push(s.to_string());
+
+                let words: Vec<&str> = s.split_whitespace().collect();
+
+                let mut sum = Array1::<f32>::zeros(self.dim);
+                let mut count = 0;
+                for word in words.iter() {
+                    if let Some(idx) = self.w_to_i.get(*word) {
+                        sum += &input_vector.row(*idx);
+                        count += 1;
+                    };
+                }
+
+                let result = if count > 0 {
+                    sum / count as f32
+                } else {
+                    Array1::<f32>::zeros(self.dim)
+                };
+
+                map.insert(s.to_string(), result);
+
+                //sentence_e.push(Axis(0), result.view()).unwrap();
+            }
+
+            //let q_words: Vec<&str> = q.split_whitespace().collect();
+            //let a_words: Vec<&str> = a.split_whitespace().collect();
+
+            //let mut sum = Array1::<f32>::zeros(self.dim);
+            //let mut count = 0;
+            //for word in q_words.iter() {
+            //    if let Some(idx) = self.w_to_i.get(*word) {
+            //        sum += &input_vector.row(*idx);
+            //        count += 1;
+            //    };
+            //}
+        }
+        map
+    }
+    pub fn sentences(&self) -> HashMap<String, Array<f32, Ix1>> {
+        let words: Vec<String> = self.vocab.keys().cloned().collect();
+
+        //let mut sentence_e = Array2::<f32>::zeros((2000, self.dim));
+        //let mut sentences_list = Vec::new();
+        let mut map = HashMap::new();
+        println!("words: {:?}", words.len());
+
+        let qa: Vec<&str> = self.corpus.lines().collect();
+
+        let input_vector = self.input_e.lock().unwrap();
+
+        for line in qa.iter() {
+            println!("line: {}", line);
+            for s in line.split('\t') {
+                println!("{:?}", s);
+                //sentences_list.push(s.to_string());
+
+                let words: Vec<&str> = s.split_whitespace().collect();
+
+                let mut sum = Array1::<f32>::zeros(self.dim);
+                let mut count = 0;
+                for word in words.iter() {
+                    if let Some(idx) = self.w_to_i.get(*word) {
+                        sum += &input_vector.row(*idx);
+                        count += 1;
+                    };
+                }
+
+                let result = if count > 0 {
+                    sum / count as f32
+                } else {
+                    Array1::<f32>::zeros(self.dim)
+                };
+
+                map.insert(s.to_string(), result);
+
+                //sentence_e.push(Axis(0), result.view()).unwrap();
+            }
+
+            //let q_words: Vec<&str> = q.split_whitespace().collect();
+            //let a_words: Vec<&str> = a.split_whitespace().collect();
+
+            //let mut sum = Array1::<f32>::zeros(self.dim);
+            //let mut count = 0;
+            //for word in q_words.iter() {
+            //    if let Some(idx) = self.w_to_i.get(*word) {
+            //        sum += &input_vector.row(*idx);
+            //        count += 1;
+            //    };
+            //}
+        }
+        map
     }
 
     pub fn embed(&self) {
@@ -441,6 +553,179 @@ impl Model {
         });
     }
 
+    pub fn encode_question(&self, question: &str) -> Array<f32, Ix1> {
+        let input_embedding = self.input_e.lock().unwrap();
+        let mut sum = Array1::<f32>::zeros(self.dim);
+        let mut count = 0;
+
+        for word in question.split_whitespace() {
+            if let Some(idx) = self.w_to_i.get(word) {
+                sum += &input_embedding.row(*idx);
+                count += 1;
+            }
+        }
+        if count > 0 {
+            sum / count as f32
+        } else {
+            Array1::<f32>::zeros(self.dim)
+        }
+    }
+
+    pub fn find_answer(
+        &self,
+        sentences: &HashMap<String, Array<f32, Ix1>>,
+        q_v: Array<f32, Ix1>,
+    ) -> String {
+        let mut scores = sentences
+            .iter()
+            .map(|(s, v)| {
+                let dot: f32 = q_v.dot(v);
+                let mag1 = q_v.mapv(|x| x * x).sum().sqrt();
+                let mag2 = v.mapv(|x| x * x).sum().sqrt();
+
+                //println!("{} {}", mag1, mag2);
+                if mag1 == 0.0 || mag2 == 0.0 {
+                    return (0.0, s.to_string());
+                }
+
+                (dot / (mag1 * mag2), s.to_string())
+            })
+            .collect::<Vec<(f32, String)>>();
+
+        scores.sort_by(|(v1, s1), (v2, s2)| v1.total_cmp(v2));
+
+        println!("Sco: {:?} {:?}", scores[0], scores.last().unwrap());
+        for i in scores.len() - 5..scores.len() {
+            println!("{}: {}", scores.len() - i, scores[i].1);
+        }
+
+        scores.last().unwrap().1.clone()
+    }
+
+    pub fn save_embedding(&self) {
+        //let mut file = File::create("./graph/embedding.txt").unwrap();
+    }
+
+    //pub fn load_embeddings_txt2(&self, path: &str) -> std::io::Result<()> {
+    //    let buf = String::new();
+    //    let file = File::open(path)?.read_to_string(buf);
+    //    let mut writer = BufReader::new(file);
+
+    //    let mut words: Vec<_> = self.w_to_i.iter().collect();
+    //    words.sort_by(|a, b| a.0.cmp(b.0));
+
+    //    let arr = Array2::<f32>::zeros((2000, self.dim));
+
+    //    for (word, &idx) in words {
+    //        arr.push(Axis(0), vec)
+    //        write!(&mut writer, "{}", word)?;
+    //        for val in vec.iter() {
+    //            write!(&mut writer, " {}", val)?;
+    //        }
+    //        writeln!(&mut writer)?;
+    //    }
+
+    //    Ok(())
+    //}
+    pub fn load_embeddings_txt(
+        &self,
+        path: &str,
+    ) -> Result<
+        (HashMap<String, usize>, HashMap<usize, String>, Array2<f32>),
+        Box<dyn std::error::Error>,
+    > {
+        let path = Path::new(path);
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        let header: Vec<&str> = line.trim().split_whitespace().collect();
+        let vocab_size: usize = header[0].parse()?;
+        let dim: usize = header[1].parse()?;
+
+        let mut w_to_i: HashMap<String, usize> = HashMap::with_capacity(vocab_size);
+        let mut i_to_w: HashMap<usize, String> = HashMap::with_capacity(vocab_size);
+        let mut matrix = Array2::<f32>::zeros((vocab_size, dim));
+
+        for (idx, line_result) in reader.lines().enumerate() {
+            let line = line_result?;
+            let parts: Vec<&str> = line.trim().split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            let word = parts[0].to_string();
+            let vec: Vec<f32> = parts[1..]
+                .iter()
+                .map(|s| s.parse::<f32>().unwrap())
+                .collect();
+
+            assert_eq!(vec.len(), dim, "Dimension mismatch at word: {}", word);
+
+            w_to_i.insert(word.clone(), idx);
+            i_to_w.insert(idx, word);
+            matrix.row_mut(idx).assign(&ndarray::Array1::from(vec));
+        }
+
+        Ok((w_to_i, i_to_w, matrix))
+    }
+
+    pub fn set_input(&mut self, input: Array<f32, Ix2>) {
+        let mut i = self.input_e.lock().unwrap();
+
+        *i = input
+    }
+
+    pub fn question_answer_loop(&self, sentences: &HashMap<String, Array<f32, Ix1>>) {
+        loop {
+            let mut input = String::new();
+            io::stdout().flush().expect("Failed to flush stdout");
+
+            io::stdin()
+                .read_line(&mut input)
+                .expect("Failed to read line");
+
+            let input = input.trim();
+            println!("\n{}", input.yellow());
+
+            if input == "quit" || input == "exit" {
+                println!("Exiting program...");
+                break;
+            }
+
+            if input.is_empty() {
+                println!("You didn't type anything. Try again.");
+            } else {
+                let q_v = self.encode_question(input);
+                let answer = self.find_answer(sentences, q_v);
+                println!("{}", answer.green());
+            }
+        }
+    }
+    pub fn save_embeddings_txt(&self, path: &str) -> std::io::Result<()> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        writeln!(&mut writer, "{} {}", self.w_to_i.len(), self.dim)?;
+
+        let guard = self.input_e.lock().unwrap();
+
+        let mut words: Vec<_> = self.w_to_i.iter().collect();
+        words.sort_by(|a, b| a.0.cmp(b.0));
+
+        for (word, &idx) in words {
+            let vec = guard.row(idx);
+            write!(&mut writer, "{}", word)?;
+            for val in vec.iter() {
+                write!(&mut writer, " {}", val)?;
+            }
+            writeln!(&mut writer)?;
+        }
+
+        Ok(())
+    }
+
     pub fn cosine_similarity(&self, word1: &str, word2: &str) -> Option<f32> {
         let input_e = self.input_e.lock().unwrap();
 
@@ -457,8 +742,12 @@ impl Model {
         if mag1 == 0.0 || mag2 == 0.0 {
             return Some(0.0); // or None if you prefer
         }
-        println!("dot: {} | mag1: {} | mag2: {}", dot, mag1, mag2);
-        Some(dot / (mag1 * mag2))
+
+        let res = dot / (mag1 * mag2);
+
+        //println!("dot: {} | mag1: {} | mag2: {}", dot, mag1, mag2);
+        println!("{} & {} = {}", word1, word2, res);
+        Some(res)
     }
 }
 fn magnitude(input: &[f32]) -> f32 {
