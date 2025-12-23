@@ -217,6 +217,83 @@ impl Model {
         }
         map
     }
+
+    pub fn predict(&self, query: &str, len: usize, window: usize) -> String {
+        println!("Predicting...");
+
+        let input_vector = self.input_e.lock().unwrap();
+        let mut prev_tokens = query.to_string();
+        let mut response = query.to_lowercase();
+
+        println!("v le {}", self.vocab.len());
+
+        while response.len() <= len {
+            println!("prev: {}", prev_tokens);
+            let mut scores = self
+                .vocab
+                .keys()
+                .map(|word| {
+                    //let query_tokens = self.encode_question(&prev_word);
+                    let query_tokens = {
+                        let mut sum = Array1::<f32>::zeros(self.dim);
+                        let mut count = 0;
+
+                        for word in prev_tokens.split_whitespace() {
+                            //println!("W: {}", word);
+                            if let Some(idx) = self.w_to_i.get(&word.to_lowercase()) {
+                                sum += &input_vector.row(*idx);
+                                count += 1;
+                            }
+                        }
+                        if count > 0 {
+                            sum / count as f32
+                        } else {
+                            Array1::<f32>::zeros(self.dim)
+                        }
+                    };
+
+                    let word_idx = self.w_to_i.get(word).unwrap();
+                    let word_vec = input_vector.row(*word_idx);
+
+                    let dot: f32 = query_tokens.dot(&word_vec);
+                    let mag1 = query_tokens.mapv(|x| x * x).sum().sqrt();
+                    let mag2 = word_vec.mapv(|x| x * x).sum().sqrt();
+
+                    //println!("{} {}", mag1, mag2);
+                    if mag1 == 0.0 || mag2 == 0.0 {
+                        return (0.0, word.to_string());
+                    }
+
+                    (dot / (mag1 * mag2), word.to_string())
+                })
+                .collect::<Vec<(f32, String)>>();
+
+            scores.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            //scores.sort_by(|(v1, s1), (v2, s2)| v1.total_cmp(v2));
+            let new_word = scores[0].1.clone();
+
+            //println!("Sco: {:?} {:?}", scores[0], scores.last().unwrap());
+            for i in scores.len() - 5..scores.len() {
+                println!("{}: {}", scores.len() - i, scores[i].1);
+            }
+
+            response += " ";
+            response += &new_word;
+
+            prev_tokens = response
+                .split_whitespace()
+                .collect::<Vec<&str>>()
+                .iter()
+                .rev()
+                .take(window)
+                .rev()
+                .cloned()
+                .collect::<Vec<&str>>()
+                .join(" ");
+        }
+
+        response
+    }
     pub fn sentences(&self) -> HashMap<String, Array<f32, Ix1>> {
         let words: Vec<String> = self.vocab.keys().cloned().collect();
 

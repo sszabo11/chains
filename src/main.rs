@@ -34,50 +34,58 @@ fn main() {
     );
 
     //println!("ch: {:?}", chatbot);
-    let mut model = Model::new(harry1, 700, 6, 15);
+    let mut model = Model::new(seuss, 800, 10, 20);
     println!("{:?}", model.vocab);
 
-    model.train(6, 0.0002);
+    //model.train(20, 0.00015);
 
-    //let (w_to_i, i_to_w, matrix) = model.load_embeddings_txt("./graph/chatbot.txt").unwrap();
-    //model.w_to_i = w_to_i;
-    //model.set_input(matrix);
+    let (w_to_i, i_to_w, matrix) = model
+        .load_embeddings_txt("./graph/seuss-800-2-20:10.txt")
+        .unwrap();
+    model.w_to_i = w_to_i;
+    model.set_input(matrix);
 
-    model.save_embeddings_txt("./graph/harry.txt").unwrap();
+    //model
+    //    .save_embeddings_txt("./graph/seuss-800-2-20:10.txt")
+    //    .unwrap();
 
+    let res = model.predict("The truffula", 100, 6);
+    println!("{}", res);
     println!("Training complete!");
 
-    let sentences_map = model.sentences2();
+    //{
+    //let sentences_map = model.sentences();
 
-    println!("Computed sentences!");
+    //println!("Computed sentences!");
 
-    println!();
-    println!();
-    println!();
+    //println!();
+    //println!();
+    //println!();
 
-    //model.sentence(15, 0.0002);
-    let words: Vec<String> = model.vocab.keys().cloned().collect();
+    ////model.sentence(15, 0.0002);
+    //let words: Vec<String> = model.vocab.keys().cloned().collect();
 
-    //let data = model.input_e.lock().unwrap();
+    ////let data = model.input_e.lock().unwrap();
 
-    //draw2(&words, data.clone(), "9.png").unwrap();
+    ////draw2(&words, data.clone(), "9.png").unwrap();
 
-    model.question_answer_loop(&sentences_map);
-    let q = model.encode_question("Whats the weather?");
-    println!("Encoded question!");
+    //model.question_answer_loop(&sentences_map);
+    //let q = model.encode_question("Whats the weather?");
+    //println!("Encoded question!");
 
-    let a = model.find_answer(&sentences_map, q);
-    println!("Found answer!");
+    //let a = model.find_answer(&sentences_map, q);
+    //println!("Found answer!");
 
-    println!("Answer: {}", a);
+    //println!("Answer: {}", a);
 
-    let mut sentence_e = Array2::<f32>::zeros((2000, model.dim));
-    sentences_map
-        .values()
-        .for_each(|v| sentence_e.push(Axis(0), v.view()).unwrap());
+    //let mut sentence_e = Array2::<f32>::zeros((2000, model.dim));
+    //sentences_map
+    //    .values()
+    //    .for_each(|v| sentence_e.push(Axis(0), v.view()).unwrap());
 
-    let list: Vec<String> = sentences_map.keys().cloned().collect();
+    //let list: Vec<String> = sentences_map.keys().cloned().collect();
 
+    //}
     //draw2(&list, sentence_e, "8.png").unwrap();
     //drop(data);
 
